@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, Response, stream_with_context
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -13,31 +13,32 @@ client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY")
 )
 
-def ask_ai(question):
+def ask_ai_stream(question):
+    """Stream AI response word by word"""
     try:
-        response = client.chat.completions.create(
+        stream = client.chat.completions.create(
             model="stepfun/step-3.5-flash:free",
             messages=[
                 {
                     "role": "system",
                     "content": """You are an expert MCAT tutor.
                     Answer questions clearly and concisely.
-                    Format with emojis and clear sections.
-                    Always include:
-                    📚 EXPLANATION:
-                    💡 EXAMPLE:
-                    ❓ PRACTICE QUESTION:"""
+                    Keep responses focused and brief.
+                    Format with emojis and clear sections."""
                 },
                 {
                     "role": "user",
                     "content": question
                 }
             ],
-            max_tokens=800
+            max_tokens=300,
+            stream=True
         )
-        return response.choices[0].message.content
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
     except Exception as e:
-        return f"Error: {str(e)}"
+        yield f"Error: {str(e)}"
 
 # HTML Template
 HTML = """
@@ -134,14 +135,17 @@ HTML = """
             font-weight: bold;
             font-size: 15px;
         }
-        .typing {
-            background: #16213e;
-            color: #4ecca3;
-            padding: 10px 15px;
-            border-radius: 15px;
-            align-self: flex-start;
-            display: none;
-            margin: 0 15px;
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: #4ecca3;
+            animation: blink 1s infinite;
+            vertical-align: middle;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
         }
     </style>
 </head>
@@ -163,15 +167,13 @@ Choose a topic below or type your question!
     </div>
 
     <div class="quick-buttons">
-        <button class="quick-btn" onclick="sendQuick('Explain DNA replication')">🧬 DNA Replication</button>
-        <button class="quick-btn" onclick="sendQuick('Explain Le Chatelier principle')">⚗️ Le Chatelier</button>
-        <button class="quick-btn" onclick="sendQuick('Generate 3 biology practice questions')">📝 Biology Quiz</button>
-        <button class="quick-btn" onclick="sendQuick('Create an 8 week MCAT study plan')">📅 Study Plan</button>
-        <button class="quick-btn" onclick="sendQuick('Explain Freud theories for MCAT')">🧠 Psychology</button>
-        <button class="quick-btn" onclick="sendQuick('Explain oxidative phosphorylation')">🔬 Biochemistry</button>
+        <button class="quick-btn" onclick="sendQuick('Explain DNA replication briefly')">🧬 DNA Replication</button>
+        <button class="quick-btn" onclick="sendQuick('Explain Le Chatelier principle briefly')">⚗️ Le Chatelier</button>
+        <button class="quick-btn" onclick="sendQuick('Give 3 biology practice questions')">📝 Biology Quiz</button>
+        <button class="quick-btn" onclick="sendQuick('Create a brief 8 week MCAT study plan')">📅 Study Plan</button>
+        <button class="quick-btn" onclick="sendQuick('Explain Freud theories for MCAT briefly')">🧠 Psychology</button>
+        <button class="quick-btn" onclick="sendQuick('Explain oxidative phosphorylation briefly')">🔬 Biochemistry</button>
     </div>
-
-    <div class="typing" id="typing">Agent is thinking... ⏳</div>
 
     <div class="input-area">
         <input
@@ -180,10 +182,12 @@ Choose a topic below or type your question!
             placeholder="Ask any MCAT question..."
             onkeypress="handleKey(event)"
         />
-        <button onclick="sendMessage()">Send</button>
+        <button onclick="sendMessage()" id="sendBtn">Send</button>
     </div>
 
     <script>
+        let isStreaming = false;
+
         function addMessage(text, isUser) {
             const chatBox = document.getElementById('chatBox');
             const msg = document.createElement('div');
@@ -191,34 +195,64 @@ Choose a topic below or type your question!
             msg.textContent = text;
             chatBox.appendChild(msg);
             chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        function showTyping(show) {
-            document.getElementById('typing').style.display = show ? 'block' : 'none';
+            return msg;
         }
 
         async function sendMessage() {
+            if (isStreaming) return;
             const input = document.getElementById('userInput');
             const message = input.value.trim();
             if (!message) return;
 
             addMessage(message, true);
             input.value = '';
-            showTyping(true);
+            isStreaming = true;
+
+            // Disable send button
+            document.getElementById('sendBtn').textContent = '...';
+            document.getElementById('sendBtn').disabled = true;
+
+            // Create bot message with cursor
+            const chatBox = document.getElementById('chatBox');
+            const botMsg = document.createElement('div');
+            botMsg.className = 'message bot-msg';
+            const cursor = document.createElement('span');
+            cursor.className = 'cursor';
+            botMsg.appendChild(cursor);
+            chatBox.appendChild(botMsg);
+            chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
-                const response = await fetch('/ask', {
+                const response = await fetch('/stream', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({question: message})
                 });
-                const data = await response.json();
-                showTyping(false);
-                addMessage(data.answer, false);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    fullText += chunk;
+                    botMsg.textContent = fullText;
+                    botMsg.appendChild(cursor);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+
+                // Remove cursor when done
+                botMsg.textContent = fullText;
+
             } catch (error) {
-                showTyping(false);
-                addMessage('Error: Could not get response. Try again!', false);
+                botMsg.textContent = 'Error: Could not get response. Try again!';
             }
+
+            isStreaming = false;
+            document.getElementById('sendBtn').textContent = 'Send';
+            document.getElementById('sendBtn').disabled = false;
         }
 
         function sendQuick(message) {
@@ -238,12 +272,44 @@ Choose a topic below or type your question!
 def home():
     return render_template_string(HTML)
 
+@app.route('/stream', methods=['POST'])
+def stream():
+    data = request.json
+    question = data.get('question', '')
+    return Response(
+        stream_with_context(ask_ai_stream(question)),
+        mimetype='text/plain',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+# Keep old endpoint as backup
 @app.route('/ask', methods=['POST'])
 def ask():
     data = request.json
     question = data.get('question', '')
-    answer = ask_ai(question)
-    return jsonify({'answer': answer})
+    try:
+        response = client.chat.completions.create(
+            model="stepfun/step-3.5-flash:free",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert MCAT tutor. Be concise."
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ],
+            max_tokens=300
+        )
+        return jsonify({
+            'answer': response.choices[0].message.content
+        })
+    except Exception as e:
+        return jsonify({'answer': f"Error: {str(e)}"})
 
 if __name__ == '__main__':
     print("="*50)
