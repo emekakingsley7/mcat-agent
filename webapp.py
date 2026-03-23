@@ -1,24 +1,41 @@
 from flask import Flask, request, jsonify, render_template_string
 import os
-import google.generativeai as genai
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
 
-# Configure AI
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-2.0-flash")
+# OpenRouter AI Brain
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY")
+)
 
 def ask_ai(question):
     try:
-        prompt = f"""You are an expert MCAT tutor.
-        Answer this question clearly and concisely:
-        {question}
-        Format with emojis and clear sections."""
-        response = model.generate_content(prompt)
-        return response.text
+        response = client.chat.completions.create(
+            model="stepfun/step-3.5-flash:free",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert MCAT tutor.
+                    Answer questions clearly and concisely.
+                    Format with emojis and clear sections.
+                    Always include:
+                    📚 EXPLANATION:
+                    💡 EXAMPLE:
+                    ❓ PRACTICE QUESTION:"""
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ],
+            max_tokens=800
+        )
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -124,6 +141,7 @@ HTML = """
             border-radius: 15px;
             align-self: flex-start;
             display: none;
+            margin: 0 15px;
         }
     </style>
 </head>
@@ -132,8 +150,8 @@ HTML = """
 
     <div class="chat-box" id="chatBox">
         <div class="message bot-msg">
-            👋 Welcome to your MCAT Study Agent!
-            
+👋 Welcome to your MCAT Study Agent!
+
 I can help you with:
 📚 All MCAT subjects
 📝 Practice questions
@@ -230,6 +248,5 @@ def ask():
 if __name__ == '__main__':
     print("="*50)
     print("MCAT Web App Starting...")
-    print("Open on phone: http://YOUR-IP:5000")
     print("="*50)
     app.run(host='0.0.0.0', port=5000, debug=False)

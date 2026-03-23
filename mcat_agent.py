@@ -54,7 +54,7 @@ def ask_mcat_ai(question: str, subject: str = "general") -> str:
     """Ask AI a MCAT related question"""
     try:
         response = client.chat.completions.create(
-            model="stepfun/step-3.5-flash:free",
+            model="openrouter/free",
             messages=[
                 {
                     "role": "system",
@@ -87,7 +87,7 @@ def generate_practice_questions(subject: str, difficulty: str = "medium") -> str
     """Generate MCAT practice questions"""
     try:
         response = client.chat.completions.create(
-            model="stepfun/step-3.5-flash:free",
+            model="openrouter/free",
             messages=[
                 {
                     "role": "system",
@@ -119,7 +119,7 @@ def generate_study_plan(weeks: int = 8) -> str:
     """Generate a 2 month MCAT study plan"""
     try:
         response = client.chat.completions.create(
-            model="stepfun/step-3.5-flash:free",
+            model="openrouter/free",
             messages=[
                 {
                     "role": "system",
@@ -152,7 +152,7 @@ def get_topic_summary(topic: str) -> str:
     """Get a quick summary of an MCAT topic"""
     try:
         response = client.chat.completions.create(
-            model="stepfun/step-3.5-flash:free",
+            model="openrouter/free",
             messages=[
                 {
                     "role": "system",
