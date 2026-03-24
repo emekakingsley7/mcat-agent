@@ -7,7 +7,6 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# OpenRouter AI Brain
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENROUTER_API_KEY")
@@ -20,14 +19,14 @@ def ask_ai(question):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an MCAT tutor. Be brief and clear. Max 3 sentences per section."
+                    "content": "You are an MCAT tutor. Be brief and clear."
                 },
                 {
                     "role": "user",
                     "content": question
                 }
             ],
-            max_tokens=250,
+            max_tokens=300,
             temperature=0.3
         )
         return response.choices[0].message.content
@@ -41,7 +40,11 @@ HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MCAT Study Agent</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
             font-family: Arial, sans-serif;
             background: #1a1a2e;
@@ -78,13 +81,11 @@ HTML = """
             background: #4ecca3;
             color: #1a1a2e;
             align-self: flex-end;
-            border-bottom-right-radius: 3px;
         }
         .bot-msg {
             background: #16213e;
             color: white;
             align-self: flex-start;
-            border-bottom-left-radius: 3px;
         }
         .thinking {
             background: #16213e;
@@ -109,10 +110,6 @@ HTML = """
             cursor: pointer;
             font-size: 13px;
             text-align: center;
-        }
-        .quick-btn:active {
-            background: #4ecca3;
-            color: #1a1a2e;
         }
         .input-area {
             display: flex;
@@ -159,7 +156,7 @@ HTML = """
 📅 Study plan
 ❓ Any MCAT question
 
-Type your question or tap a button below!
+Type your question or tap a button!
         </div>
     </div>
 
@@ -183,39 +180,36 @@ Type your question or tap a button below!
     </div>
 
     <script>
-        let isWaiting = false;
-        let thinkingEl = null;
+        var isWaiting = false;
 
         function addMessage(text, isUser) {
-            const chatBox = document.getElementById('chatBox');
-            const msg = document.createElement('div');
-            msg.className = `message ${isUser ? 'user-msg' : 'bot-msg'}`;
+            var chatBox = document.getElementById('chatBox');
+            var msg = document.createElement('div');
+            msg.className = 'message ' + (isUser ? 'user-msg' : 'bot-msg');
             msg.textContent = text;
             chatBox.appendChild(msg);
             chatBox.scrollTop = chatBox.scrollHeight;
-            return msg;
         }
 
         function showThinking() {
-            const chatBox = document.getElementById('chatBox');
-            thinkingEl = document.createElement('div');
-            thinkingEl.className = 'thinking';
-            thinkingEl.textContent = '⏳ Thinking...';
-            chatBox.appendChild(thinkingEl);
+            var chatBox = document.getElementById('chatBox');
+            var el = document.createElement('div');
+            el.className = 'thinking';
+            el.id = 'thinking';
+            el.textContent = 'Thinking...';
+            chatBox.appendChild(el);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
         function hideThinking() {
-            if (thinkingEl) {
-                thinkingEl.remove();
-                thinkingEl = null;
-            }
+            var el = document.getElementById('thinking');
+            if (el) el.remove();
         }
 
-        async function sendMessage() {
+        function sendMessage() {
             if (isWaiting) return;
-            const input = document.getElementById('userInput');
-            const message = input.value.trim();
+            var input = document.getElementById('userInput');
+            var message = input.value.trim();
             if (!message) return;
 
             addMessage(message, true);
@@ -223,27 +217,32 @@ Type your question or tap a button below!
             isWaiting = true;
             showThinking();
 
-            const btn = document.getElementById('sendBtn');
+            var btn = document.getElementById('sendBtn');
             btn.disabled = true;
             btn.textContent = '...';
 
-            try:
-                const response = await fetch('/ask', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({question: message})
-                });
-                const data = await response.json();
+            fetch('/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: message})
+            })
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
                 hideThinking();
                 addMessage(data.answer, false);
-            } catch (error) {
+                isWaiting = false;
+                btn.disabled = false;
+                btn.textContent = 'Send';
+            })
+            .catch(function(error) {
                 hideThinking();
                 addMessage('Error: Try again!', false);
-            }
-
-            isWaiting = false;
-            btn.disabled = false;
-            btn.textContent = 'Send';
+                isWaiting = false;
+                btn.disabled = false;
+                btn.textContent = 'Send';
+            });
         }
 
         function sendQuick(message) {
